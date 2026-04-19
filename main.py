@@ -88,7 +88,7 @@ def mfragment_doc(docId, guardRes):
 <div id="{pre}_main" style="display: flex; gap: 12px">
     <div style="flex: 1">{transTag}</div>
     <div id="docHolder" style="flex: 1; display: grid; grid-template-columns: min-content auto; height: min-content; row-gap: 8px; column-gap: 8px; align-items: center">
-        <button class="btn" onclick="wrapToastReq(fetch('/api/doc/{doc.id}/clear/contentErr?token={guardRes['token']}'))">Clear contentErr</button><div id="{pre}_2"></div>
+        <button class="btn" onclick="wrapToastReq(fetch('/api/doc/{doc.id}/clear/contentErr?token={guardRes['token']}'))">Clear contentErr</button><pre id="{pre}_2" style="overflow-x: auto"></pre>
         <button class="btn" onclick="wrapToastReq(fetch('/api/doc/{doc.id}/clear/chatId?token={guardRes['token']}'))"    >Clear chatId    </button><div id="{pre}_3"></div>
     </div></div>
 <script>{pre}_2.innerHTML = {json.dumps(doc.contentErr)}; {pre}_3.innerHTML = {json.dumps(doc.chatId)};</script>"""
