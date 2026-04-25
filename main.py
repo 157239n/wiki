@@ -4,6 +4,8 @@ from urllib.parse import urlparse, parse_qs
 from schemaParser import *
 
 settings.timezone = "Asia/Hanoi"
+aiServer = "https://ai.aigu.vn"
+wikiServer = "https://wiki.aigu.vn"
 
 db = sql("dbs/main.db", mode="lite", manage=True)["default"]
 db.query("""CREATE TABLE IF NOT EXISTS docs (
@@ -27,11 +29,11 @@ app = web.Flask(__name__)
 def test(): return "ok"
 
 def sendAiServer(js): return requests.post("https://ai.aigu.vn/ingest?token=" + k1.aes_encrypt_json({"app": "yt", "timeout": int(time.time()) + 20}), json=js)
-def tokenGuard(args):
-    token = args.get('token', default=None)
-    if not token: web.unauthorized("Token not found")
+def tokenGuard(args, request):
+    token = args.get('token', default=None); redirect = lambda reason: web.redirect(f"{aiServer}/login?token=" + k1.aes_encrypt_json({"url": f"{wikiServer}{request.full_path.strip('?')}", "tokenDuration": 86400}))
+    if not token: redirect("Token not found")
     obj = k1.aes_decrypt_json(token)
-    if time.time() > obj["timeout"]: web.unauthorized("Token timed out")
+    if time.time() > obj["timeout"]: redirect("Token timed out")
     if "userId" in obj:
         userId = obj["userId"]; user = db["users"].lookup(id=userId)
         if user is None:
@@ -40,15 +42,15 @@ def tokenGuard(args):
             db["users"].insert(id=userId, scheduleId=int(res.text))
     obj["token"] = token; return obj
 
-def docGuard(args, docId):
-    obj = tokenGuard(args)
+def docGuard(args, docId, request):
+    obj = tokenGuard(args, request)
     if db["docs"].lookup(id=docId, userId=obj["userId"]) is None: web.unauthorized("User not authorized to view/modify this doc")
     return obj
 
 @app.route("/", daisyEnv=True, guard=tokenGuard)
 def index(guardRes):
-    pre = init._jsDAuto()
-    ui1 = db.query(f"select id, contentErr, length(content), chatId, createdTime, title from docs where userId = ? order by id desc", guardRes['userId']) | ~apply(lambda i,ce,lc,cId,ct,ti: [i,
+    pre = init._jsDAuto(); user = db["users"][guardRes["userId"]]
+    ui1 = db.query(f"select id, contentErr, length(content), chatId, createdTime, title from docs where userId = ? order by id desc", user.id) | ~apply(lambda i,ce,lc,cId,ct,ti: [i,
             'none' if ce is None else ('error' if ce else 'yes'),lc,
             'none' if cId is None else ('error' if isinstance(cId, str) else cId),ct | toIso() | op().replace(*"T "),ti])\
         | deref() | (toJsFunc("term") | grep("${term}") | viz.Table(["id", "hasContent", "len(content)", "chatId", "createdTime", "title"], onclickFName=f"{pre}_select", selectable=True, height=400)) | op().interface() | toHtml()
@@ -56,14 +58,15 @@ def index(guardRes):
 <div id="main" style="display: flex; flex-direction: column">
     <div style="display: flex; flex-direction: row; align-items: center; margin-bottom: 24px">
         <h2>Documents</h2>
-        <input id="{pre}_url" class="input input-bordered" placeholder="(website url)" style="margin-left: 24px; margin-right: 8px" />
-        <button id="{pre}_newBtn" class="btn">{k1.Icon.add()}</button>
+        <input id="{pre}_url" class="input input-bordered" placeholder="(website url)" style="margin-left: 24px; margin-right: 8px" autofocus />
+        <button class="btn btn-outline" style="padding: 8px; margin-right: 4px; display: block" onclick="{pre}_new()" onkeydown="if(event.key == 'Enter') {pre}_new();">{k1.Icon.add()}</button>
+        <button class="btn btn-outline" style="padding: 8px; margin-right: 4px; display: block" onclick="window.open('{aiServer}/schedule/{user.scheduleId}/search', '_blank');" title="Go to schedule search page">{k1.Icon.search()}</button>
     </div>
     <div style="overflow-x: auto; width: 100%">{ui1}</div>
     <div id="{pre}_res"></div></div>
 <script>
     function {pre}_select(row, i, e) {{ dynamicLoad("#{pre}_res", `/mfragment/doc/${{row[0]}}?token={guardRes['token']}`); }}
-    {pre}_newBtn.onclick = async () => {{ await wrapToastReq(fetchPost("/api/doc/new?token={guardRes['token']}", {{ url: {pre}_url.value.trim() }})); {pre}_url.value = ""; {pre}_url.focus(); }}
+    async function {pre}_new() {{ await wrapToastReq(fetchPost("/api/doc/new?token={guardRes['token']}", {{ url: {pre}_url.value.trim() }})); {pre}_url.value = ""; {pre}_url.focus(); }}
 </script>"""
 
 @app.route("/api/doc/new", methods=["POST"], guard=tokenGuard)
