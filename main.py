@@ -41,6 +41,9 @@ def tokenGuard(args, request):
             if not res.ok: web.unauthorized(f"Tried to initialize user {userId} on ai.aigu.vn but can't for some reason: {res.text}")
             db["users"].insert(id=userId, scheduleId=int(res.text))
     obj["token"] = token; return obj
+def adminGuard(args, request):
+    obj = tokenGuard(args, request)
+    if obj.get("userId", 0) != 1: web.unauthorized()
 
 def docGuard(args, docId, request):
     obj = tokenGuard(args, request)
@@ -54,12 +57,12 @@ def index(guardRes):
             'none' if ce is None else ('error' if ce else 'yes'),lc,
             'none' if cId is None else ('error' if isinstance(cId, str) else cId),ct | toIso() | op().replace(*"T "),ti])\
         | deref() | (toJsFunc("term") | grep("${term}") | viz.Table(["id", "hasContent", "len(content)", "chatId", "createdTime", "title"], onclickFName=f"{pre}_select", selectable=True, height=400)) | op().interface() | toHtml()
-    return f"""<style>#main {{ flex-direction: column-reverse; }} @media (min-width: 600px) {{ #main {{ flex-direction: row; }} }}</style><title>Local youtube service</title>
+    return f"""<style>#main {{ flex-direction: column-reverse; }} @media (min-width: 600px) {{ #main {{ flex-direction: row; }} }}</style><title>Local document service</title>
 <div id="main" style="display: flex; flex-direction: column">
     <div style="display: flex; flex-direction: row; align-items: center; margin-bottom: 24px">
         <h2>Documents</h2>
-        <input id="{pre}_url" class="input input-bordered" placeholder="(website url)" style="margin-left: 24px; margin-right: 8px" autofocus />
-        <button class="btn btn-outline" style="padding: 8px; margin-right: 4px; display: block" onclick="{pre}_new()" onkeydown="if(event.key == 'Enter') {pre}_new();">{k1.Icon.add()}</button>
+        <input id="{pre}_url" class="input input-bordered" placeholder="(website url)" style="margin-left: 24px; margin-right: 8px" autofocus onkeydown="if(event.key == 'Enter') {pre}_new();" />
+        <button class="btn btn-outline" style="padding: 8px; margin-right: 4px; display: block" onclick="{pre}_new()">{k1.Icon.add()}</button>
         <button class="btn btn-outline" style="padding: 8px; margin-right: 4px; display: block" onclick="window.open('{aiServer}/schedule/{user.scheduleId}/search', '_blank');" title="Go to schedule search page">{k1.Icon.search()}</button>
     </div>
     <div style="overflow-x: auto; width: 100%">{ui1}</div>
@@ -150,7 +153,7 @@ def serverDef(): # server definition so that it can be used by main ai server
     tools = [] | apply(function_to_ollama_tool) | apply(lambda x: {"server": "yt", "schema": x}) | aS(list)
     res = {"url": "https://wiki.aigu.vn", "name": "wiki", "descr": "Manages documents/websites", "tools": tools}; return json.dumps(res)
 
-sql.lite_flask(app); k1.logErr.flask(app); k1.cron.flask(app)
+sql.lite_flask(app, guard=adminGuard); k1.logErr.flask(app, guard=adminGuard); k1.cron.flask(app, guard=adminGuard)
 
 app.run(host="0.0.0.0", port=5009) # same as normal flask code
 
