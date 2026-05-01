@@ -28,17 +28,17 @@ app = web.Flask(__name__)
 @app.route("/test")
 def test(): return "ok"
 
-def sendAiServer(js): return requests.post("https://ai.aigu.vn/ingest?token=" + k1.aes_encrypt_json({"app": "yt", "timeout": int(time.time()) + 20}), json=js)
+def sendAiServer(userId, js): return requests.post(f"{aiServer}/ingest?token=" + k1.aes_encrypt_json({"serverName": "wiki", "userId": userId, "timeout": int(time.time()) + 20}), json=js)
 def tokenGuard(args, request):
-    token = args.get('token', default=None); redirect = lambda reason: web.redirect(f"{aiServer}/login?token=" + k1.aes_encrypt_json({"url": f"{wikiServer}{request.full_path.strip('?')}", "tokenDuration": 86400}))
+    token = args.get('token', default=None); redirect = lambda reason: web.redirect(f"{aiServer}/login?token=" + k1.aes_encrypt_json({"url": f"{wikiServer}{request.full_path.strip('?')}", "tokenDuration": 86400, "timeout": int(time.time()) + 20}))
     if not token: redirect("Token not found")
     obj = k1.aes_decrypt_json(token)
     if time.time() > obj["timeout"]: redirect("Token timed out")
     if "userId" in obj:
         userId = obj["userId"]; user = db["users"].lookup(id=userId)
         if user is None:
-            res = sendAiServer({"cmd": "newSchedule", "userId": userId, "title": "Articles summaries (wiki app)"})
-            if not res.ok: web.unauthorized(f"Tried to initialize user {userId} on ai.aigu.vn but can't for some reason: {res.text}")
+            res = sendAiServer(userId, {"cmd": "newSchedule", "title": "Articles summaries (wiki app)"})
+            if not res.ok: web.unauthorized(f"Tried to initialize user {userId} on {aiServer} but can't for some reason: {res.text}")
             db["users"].insert(id=userId, scheduleId=int(res.text))
     obj["token"] = token; return obj
 def adminGuard(args, request):
@@ -105,7 +105,7 @@ def api_doc_clear(docId, resource, guardRes):
     if resource == "contentErr": doc.contentErr = None
     if resource == "chatId":
         if isinstance(doc.chatId, int):
-            res = sendAiServer({"cmd": "deleteChat", "chatId": doc.chatId}) # deletes old chat from ai server, to prevent clogging things up
+            res = sendAiServer(obj["userId"], {"cmd": "deleteChat", "chatId": doc.chatId}) # deletes old chat from ai server, to prevent clogging things up
             if not res.ok or res.text.strip() != "ok": web.toast_error("Can't delete chat on ai.aigu.vn")
         doc.chatId = None
     return "ok"
@@ -124,7 +124,7 @@ def docLoop(): # auto detects videos that need to be taken care of
 def summarizeLoop():
     for doc in db["docs"].select("where contentErr = '' and chatId is null"):
         user = db["users"][doc.userId]; print(f"summarize: {doc.id}")
-        res = sendAiServer({"cmd": "scheduleNewChat", "scheduleId": user.scheduleId, "prompt": f"Please summarize the following document with length {len(doc.content)} bytes and title '{doc.title}' in detail, making sure result is nicely formatted:\n\n[begin document]\n```\n{doc.content}\n```\n[end document]"})
+        res = sendAiServer(user.id, {"cmd": "scheduleNewChat", "prompt": f"Please summarize the following document with length {len(doc.content)} bytes and title '{doc.title}' in detail, making sure result is nicely formatted:\n\n[begin document]\n```\n{doc.content}\n```\n[end document]"})
         try: doc.chatId = int(res.text.strip())
         except Exception as e: doc.chatId = f"error: {res.text.strip()}"
 
@@ -151,7 +151,7 @@ def ingest(js):
 @app.route("/serverDef")
 def serverDef(): # server definition so that it can be used by main ai server
     tools = [] | apply(function_to_ollama_tool) | apply(lambda x: {"server": "yt", "schema": x}) | aS(list)
-    res = {"url": "https://wiki.aigu.vn", "name": "wiki", "descr": "Manages documents/websites", "tools": tools}; return json.dumps(res)
+    res = {"url": "https://wiki.aigu.vn", "name": "wiki", "descr": "Manages documents/websites", "tools": tools, "userMode": "mirror"}; return json.dumps(res)
 
 sql.lite_flask(app, guard=adminGuard); k1.logErr.flask(app, guard=adminGuard); k1.cron.flask(app, guard=adminGuard)
 
