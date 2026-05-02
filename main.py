@@ -153,6 +153,9 @@ def serverDef(): # server definition so that it can be used by main ai server
     tools = [] | apply(function_to_ollama_tool) | apply(lambda x: {"server": "yt", "schema": x}) | aS(list)
     res = {"url": "https://wiki.aigu.vn", "name": "wiki", "descr": "Manages documents/websites", "tools": tools, "userMode": "mirror"}; return json.dumps(res)
 
+@app.route("/api/restart", guard=adminGuard)
+def restart(): None | cmd("touch main.py") | ignore(); return "ok"
+
 sql.lite_flask(app, guard=adminGuard); k1.logErr.flask(app, guard=adminGuard); k1.cron.flask(app, guard=adminGuard)
 
 app.run(host="0.0.0.0", port=5009) # same as normal flask code
